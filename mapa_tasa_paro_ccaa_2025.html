@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tasa de paro por comunidades y ciudades autónomas, 2025</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #202938; background: #f5f7fa; }
+    header { padding: 20px 24px 12px; text-align: center; }
+    h1 { margin: 0 0 8px; font-size: clamp(20px, 3vw, 30px); }
+    .subtitle { margin: 0; color: #526071; font-size: 15px; }
+    #map { height: 72vh; min-height: 480px; width: min(1100px, 96%); margin: 12px auto 18px; border: 1px solid #d6dce5; border-radius: 10px; background: #eaf0f5; }
+    .legend { background: white; padding: 10px 12px; line-height: 1.5; border-radius: 6px; box-shadow: 0 1px 5px #0003; }
+    .legend-title { font-weight: bold; margin-bottom: 5px; }
+    .legend-row { display: flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 13px; }
+    .swatch { width: 18px; height: 13px; border: 1px solid #777; display: inline-block; }
+    footer { max-width: 1100px; width: 96%; margin: 0 auto 24px; padding: 0 4px; color: #4b5563; font-size: 13px; line-height: 1.5; }
+    .note { margin-top: 5px; }
+    .leaflet-popup-content { line-height: 1.5; }
+    @media (max-width: 600px) { #map { min-height: 420px; height: 68vh; } header { padding: 16px 12px 8px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Tasa de paro por comunidades y ciudades autónomas</h1>
+    <p class="subtitle">España · Media anual de 2025 · Porcentaje (%)</p>
+  </header>
+  <div id="map" role="application" aria-label="Mapa coroplético de la tasa de paro por comunidad autónoma"></div>
+  <footer>
+    <strong>Fuente:</strong> INE, Encuesta de Población Activa (EPA), tabla 67565: «Tasa de paro de las personas entre 16 y 74 años por sexo y Comunidad Autónoma». Media anual de 2025.
+    <div class="note">El color más oscuro representa una tasa de paro más elevada. Pulsa sobre cada territorio para consultar su valor. Ceuta y Melilla se incluyen como ciudades autónomas.</div>
+    <div class="note">Nota: las estimaciones de Ceuta y Melilla pueden ser menos precisas debido al menor tamaño de sus muestras de la EPA.</div>
+    <div class="note">Límites territoriales: Eurostat-GISCO, NUTS 2024.</div>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Datos de la hoja "Datos" del archivo datos_paro_ccaa_2025.xlsx.
+    // La clave es el código NUTS2 de cada comunidad o ciudad autónoma.
+    const tasas = {
+      "ES61": { nombre: "Andalucía", tasa: 15.23 },
+      "ES24": { nombre: "Aragón", tasa: 8.05 },
+      "ES12": { nombre: "Asturias, Principado de", tasa: 8.84 },
+      "ES53": { nombre: "Balears, Illes", tasa: 8.84 },
+      "ES70": { nombre: "Canarias", tasa: 13.53 },
+      "ES13": { nombre: "Cantabria", tasa: 7.35 },
+      "ES41": { nombre: "Castilla y León", tasa: 8.56 },
+      "ES42": { nombre: "Castilla-La Mancha", tasa: 12.77 },
+      "ES51": { nombre: "Cataluña", tasa: 8.37 },
+      "ES52": { nombre: "Comunitat Valenciana", tasa: 11.57 },
+      "ES43": { nombre: "Extremadura", tasa: 14.75 },
+      "ES11": { nombre: "Galicia", tasa: 8.36 },
+      "ES30": { nombre: "Madrid, Comunidad de", tasa: 7.98 },
+      "ES62": { nombre: "Murcia, Región de", tasa: 12.10 },
+      "ES22": { nombre: "Navarra, Comunidad Foral de", tasa: 7.70 },
+      "ES21": { nombre: "País Vasco", tasa: 7.33 },
+      "ES23": { nombre: "Rioja, La", tasa: 8.12 },
+      "ES63": { nombre: "Ceuta", tasa: 24.30 },
+      "ES64": { nombre: "Melilla", tasa: 24.85 }
+    };
+
+    const map = L.map("map", { scrollWheelZoom: true });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Intervalos de la leyenda, expresados en porcentaje.
+    const cortes = [8, 10, 12, 15, 20];
+    const colores = ["#fff2cc", "#fdd49e", "#fdbb84", "#fc8d59", "#e34a33", "#b30000"];
+
+    function color(tasa) {
+      if (tasa <= cortes[0]) return colores[0];
+      if (tasa <= cortes[1]) return colores[1];
+      if (tasa <= cortes[2]) return colores[2];
+      if (tasa <= cortes[3]) return colores[3];
+      if (tasa <= cortes[4]) return colores[4];
+      return colores[5];
+    }
+
+    function estilo(feature) {
+      const codigo = feature.id || feature.properties?.id || feature.properties?.NUTS_ID;
+      const dato = tasas[codigo];
+      return {
+        fillColor: dato ? color(dato.tasa) : "#d1d5db",
+        weight: 1.2,
+        opacity: 1,
+        color: "#ffffff",
+        fillOpacity: 0.82
+      };
+    }
+
+    function alCadaTerritorio(feature, layer) {
+      const codigo = feature.id || feature.properties?.id || feature.properties?.NUTS_ID;
+      const dato = tasas[codigo];
+      if (dato) {
+        layer.bindPopup("<strong>" + dato.nombre + "</strong><br>Tasa de paro: <strong>" +
+          dato.tasa.toFixed(2).replace(".", ",") + " %</strong>");
+        layer.bindTooltip(dato.nombre + ": " + dato.tasa.toFixed(2).replace(".", ",") + " %");
+      }
+    }
+
+    const urlGeoJSON = "https://raw.githubusercontent.com/eurostat/Nuts2json/master/pub/v2/2024/4326/10M/nutsrg_2.json";
+
+    fetch(urlGeoJSON)
+      .then(respuesta => {
+        if (!respuesta.ok) throw new Error("No se pudieron descargar los límites geográficos.");
+        return respuesta.json();
+      })
+      .then(geojson => {
+        const espana = {
+          ...geojson,
+          features: geojson.features.filter(f => {
+            const codigo = f.id || f.properties?.id || f.properties?.NUTS_ID || "";
+            return codigo.startsWith("ES") && tasas[codigo];
+          })
+        };
+
+        if (espana.features.length === 0) {
+          throw new Error("No se encontraron los códigos territoriales españoles en el archivo geográfico.");
+        }
+
+        const capa = L.geoJSON(espana, {
+          style: estilo,
+          onEachFeature: alCadaTerritorio
+        }).addTo(map);
+
+        map.fitBounds(capa.getBounds(), { padding: [18, 18] });
+      })
+      .catch(error => {
+        console.error(error);
+        document.getElementById("map").innerHTML =
+          '<div style="padding:24px;color:#8b1e1e">No se ha podido cargar el mapa geográfico. Comprueba tu conexión a Internet y vuelve a abrir la página.</div>';
+      });
+
+    const leyenda = L.control({ position: "bottomright" });
+    leyenda.onAdd = function() {
+      const div = L.DomUtil.create("div", "legend");
+      const etiquetas = ["≤ 8 %", "8,01–10 %", "10,01–12 %", "12,01–15 %", "15,01–20 %", "> 20 %"];
+      div.innerHTML = '<div class="legend-title">Tasa de paro (%)</div>' +
+        etiquetas.map((etiqueta, i) =>
+          '<div class="legend-row"><span class="swatch" style="background:' + colores[i] + '"></span>' + etiqueta + '</div>'
+        ).join("");
+      return div;
+    };
+    leyenda.addTo(map);
+  </script>
+</body>
+</html>
