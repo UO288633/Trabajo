@@ -1,1 +1,45 @@
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
+<script>
+const urlExcel = "https://raw.githubusercontent.com/UO288633/Trabajo/refs/heads/main/datos_paro_ccaa_2025.xlsx";
+
+async function cargarDatos() {
+  try {
+    const respuesta = await fetch(urlExcel);
+    if (!respuesta.ok) throw new Error("No se pudo descargar el Excel");
+
+    const contenido = await respuesta.arrayBuffer();
+    const libro = XLSX.read(contenido, {type: "array"});
+    const hoja = libro.Sheets[libro.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(hoja, {header: 1});
+
+    // Columnas del Excel:
+    // 2 = comunidad, 4 = paro, 6 = estudios superiores
+    const datos = filas.slice(1)
+      .filter(fila => fila[1] && 
+        !/Ceuta|Melilla|Total Nacional/i.test(String(fila[1])))
+      .map(fila => ({
+        nombre: String(fila[1]),
+        y: Number(fila[3]),
+        x: Number(fila[5])
+      }))
+      .filter(d => Number.isFinite(d.x) && Number.isFinite(d.y));
+
+    dibujarGrafico(datos);
+
+  } catch (error) {
+    document.getElementById("grafico").innerHTML =
+      "<text x='30' y='50'>Error al cargar los datos del Excel.</text>";
+    console.error(error);
+  }
+}
+
+// Aquí irá la función que dibuja la nube de puntos.
+function dibujarGrafico(datos) {
+  // En el siguiente paso conectaremos estos datos
+  // con el gráfico que ya tienes creado.
+  console.log("Datos cargados:", datos);
+}
+
+cargarDatos();
+</script>
