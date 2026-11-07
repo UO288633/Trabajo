@@ -1,45 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estudios superiores y tasa de paro</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  max-width: 900px;
+  margin: 30px auto;
+  padding: 15px;
+  color: #222;
+}
+h1 { text-align: center; font-size: 25px; }
+p { text-align: center; }
+svg { width: 100%; height: auto; }
+.punto { fill: #2878b5; }
+.ejes { stroke: #333; stroke-width: 1.5; }
+line.tendencia { stroke: #d45b45; stroke-width: 2; }
+.etiqueta { font-size: 12px; fill: #333; }
+.error { color: #b00020; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>Estudios superiores y tasa de paro por comunidad autónoma</h1>
+<p>España, 2025. Se excluyen Ceuta y Melilla.</p>
+<p id="estado">Cargando datos del Excel...</p>
+
+<svg id="grafico" viewBox="0 0 760 510"
+     role="img" aria-label="Gráfico de dispersión">
+</svg>
+
+<p>Fuente: elaboración propia a partir del archivo datos_paro_ccaa_2025.xlsx.</p>
 
 <script>
-const urlExcel = "https://raw.githubusercontent.com/UO288633/Trabajo/refs/heads/main/datos_paro_ccaa_2025.xlsx";
+const urlExcel =
+"https://raw.githubusercontent.com/UO288633/Trabajo/main/datos_paro_ccaa_2025.xlsx";
 
 async function cargarDatos() {
   try {
     const respuesta = await fetch(urlExcel);
-    if (!respuesta.ok) throw new Error("No se pudo descargar el Excel");
+    if (!respuesta.ok) throw new Error("No se pudo descargar el Excel.");
 
     const contenido = await respuesta.arrayBuffer();
     const libro = XLSX.read(contenido, {type: "array"});
     const hoja = libro.Sheets[libro.SheetNames[0]];
     const filas = XLSX.utils.sheet_to_json(hoja, {header: 1});
 
-    // Columnas del Excel:
-    // 2 = comunidad, 4 = paro, 6 = estudios superiores
     const datos = filas.slice(1)
-      .filter(fila => fila[1] && 
+      .filter(fila => fila[1] &&
         !/Ceuta|Melilla|Total Nacional/i.test(String(fila[1])))
       .map(fila => ({
         nombre: String(fila[1]),
-        y: Number(fila[3]),
-        x: Number(fila[5])
+        paro: Number(fila[3]),
+        estudios: Number(fila[5])
       }))
-      .filter(d => Number.isFinite(d.x) && Number.isFinite(d.y));
+      .filter(d => Number.isFinite(d.estudios) &&
+                   Number.isFinite(d.paro));
+
+    if (datos.length === 0) {
+      throw new Error("No se han encontrado datos válidos.");
+    }
 
     dibujarGrafico(datos);
+    document.getElementById("estado").textContent =
+      "Datos cargados correctamente: " + datos.length +
+      " comunidades autónomas.";
 
   } catch (error) {
-    document.getElementById("grafico").innerHTML =
-      "<text x='30' y='50'>Error al cargar los datos del Excel.</text>";
+    document.getElementById("estado").textContent =
+      "Error: " + error.message;
+    document.getElementById("estado").className = "error";
     console.error(error);
   }
 }
 
-// Aquí irá la función que dibuja la nube de puntos.
 function dibujarGrafico(datos) {
-  // En el siguiente paso conectaremos estos datos
-  // con el gráfico que ya tienes creado.
-  console.log("Datos cargados:", datos);
+  const svg = document.getElementById("grafico");
+  const ns = "http://www.w3.org/2000/svg";
+
+  const izquierda = 75, derecha = 720;
+  const arriba = 35, abajo = 420;
+  const xMin = 30, xMax = 60;
+  const yMin = 5, yMax = 17;
+
+  const x = v => izquierda +
+    (v - xMin) / (xMax - xMin) * (derecha - izquierda);
+  const y = v => abajo -
+    (v - yMin) / (yMax - yMin) * (abajo - arriba);
+
+  svg.innerHTML = "";
+
+  function elemento(tipo, atributos, contenido) {
+    const e = document.createElementNS(ns, tipo);
+    for (const [clave, valor] of Object.entries(atributos)) {
+      e.setAttribute(clave, valor);
+    }
+    if (contenido !== undefined) e.textContent = contenido;
+    svg.appendChild(e);
+    return e;
+  }
+
+  // Ejes
+  elemento("line", {x1: izquierda, y1: arriba,
+    x2: izquierda, y2: abajo, class: "ejes"});
+  elemento("line", {x1: izquierda, y1: abajo,
+    x2: derecha, y2: abajo, class: "ejes"});
+
+  // Marcas y cuadrícula
+  for (let v = 30; v <= 60; v += 5) {
+    elemento("line", {x1: x(v), y1: arriba,
+      x2: x(v), y2: abajo, stroke: "#ddd"});
+    elemento("text", {x: x(v), y: abajo + 22,
+      "text-anchor": "middle", class: "etiqueta"}, v);
+  }
+
+  for (let v = 5; v <= 15; v += 2) {
+    elemento("line", {x1: izquierda, y1: y(v),
+      x2: derecha, y2: y(v), stroke: "#ddd"});
+    elemento("text", {x: izquierda - 12, y: y(v) + 4,
+      "text-anchor": "end", class: "etiqueta"}, v);
+  }
+
+  elemento("text", {x: (izquierda + derecha)/2, y: 475,
+    "text-anchor": "middle", class: "etiqueta"},
+    "Población con estudios superiores (%)");
+
+  elemento("text", {x: 18, y: 225,
+    transform: "rotate(-90 18 225)",
+    "text-anchor": "middle", class: "etiqueta"},
+    "Tasa de paro (%)");
+
+  // Recta de tendencia
+  const mediaX = datos.reduce((s,d) => s+d.estudios,0)/datos.length;
+  const mediaY = datos.reduce((s,d) => s+d.paro,0)/datos.length;
+  const pendiente = datos.reduce((s,d) =>
+    s+(d.estudios-mediaX)*(d.paro-mediaY),0) /
+    datos.reduce((s,d) => s+(d.estudios-mediaX)**2,0);
+  const intercepto = mediaY - pendiente*mediaX;
+
+  elemento("line", {
+    x1: x(xMin), y1: y(intercepto + pendiente*xMin),
+    x2: x(xMax), y2: y(intercepto + pendiente*xMax),
+    class: "tendencia"
+  });
+
+  // Puntos y nombres
+  datos.forEach(d => {
+    const circulo = elemento("circle", {
+      cx: x(d.estudios), cy: y(d.paro), r: 5,
+      class: "punto"
+    });
+    const titulo = document.createElementNS(ns, "title");
+    titulo.textContent = d.nombre + ": " +
+      d.estudios + "% de estudios superiores; " +
+      d.paro + "% de paro";
+    circulo.appendChild(titulo);
+  });
 }
 
 cargarDatos();
 </script>
+</body>
+</html>
